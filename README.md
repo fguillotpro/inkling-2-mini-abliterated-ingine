@@ -125,8 +125,9 @@ authentication**: keep the server on loopback. Requests run one at a time; up to
 further ones get HTTP 503. `GET /health` and `GET /v1/models` report the state.
 
 A follow-up request only reads what is new in its conversation. Conversations that take turns (subagents, a
-second client) are kept warm in spare GPU memory, by default up to 3 GiB and never the last 4 GiB that are free
-after start-up (`--park-mb N` sets the budget in MiB, `0` turns it off); they are dropped when memory runs short.
+second client) are kept warm in host DRAM, by default up to 32 GiB and never more than the free host memory minus
+4 GiB (`--park-mb N` sets the budget in MiB, `0` turns it off); least recently used evicted, never released because
+of GPU memory pressure.
 
 `POST /v1/chat/completions` takes:
 
@@ -304,7 +305,8 @@ tool calls run at about 740 tokens/s, reasoning and prose at about 450; text out
 
 A new prompt is read at 10,900 tokens/s (20K tokens), 9,600 (64K), 8,100 (131K) and 7,000 (200K); a short prompt
 takes 0.09 s to the first token. The server holds 24.4 GiB of GPU memory after start-up (23.8 GiB with
-`--no-vision`) and no more while reading a 254K-token prompt; conversations kept warm add up to 3 GiB.
+`--no-vision`) and no more while reading a 254K-token prompt; conversations kept warm live in host DRAM (up to 32 GiB
+by default, never more than the free host memory minus 4 GiB).
 
 Images: the vision tower takes 3 ms for an image of up to 64 tokens (320x320 pixels), 21 ms for 576 tokens
 (960x960), 0.17 s for 1,849 tokens (1720x1720) and 1.1 s for 4,096 tokens, using up to 0.85 GiB of working memory

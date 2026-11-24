@@ -139,8 +139,8 @@ int main() {
       ok &= good;
     }
     // memory pressure: a device allocation inside a request (plain decoding's forced-token buffer) fails once
-    // while A and B are parked: they are released, the allocation retried, the request completes unchanged; B,
-    // released, is prefilled again
+    // while A and B are parked: host-parked copies are NOT dropped (they live in host memory, not VRAM), the
+    // allocation fails again and the request errors out; the parked copies still restore afterwards
     if (!spec) {
       opt.park_mb = 2048;
       gen = make_generator(opt);
@@ -150,14 +150,18 @@ int main() {
       Sampling forced = greedy;
       forced.forced = rfa.tokens;
       ingine::fail_next_allocations(1);
-      const Out ofa = run(fa, 64, forced);  // the checkpoint of fa: nothing to park before the allocation
+      bool failed = false;
+      try {
+        run(fa, 64, forced);  // the checkpoint of fa: nothing to park before the allocation
+      } catch (const std::exception&) {
+        failed = true;
+      }
       const Out ofb = run(fb, 64, greedy);
       gen.reset();
-      const bool good = ofa.stats.reuse == Reuse::Checkpoint && ofa.tokens == rfa.tokens &&
-                        ofb.stats.reuse == Reuse::None && ofb.tokens == nfb.tokens;
-      std::printf("%s a failed allocation releases the parked conversations and the request completes (reuse %s, "
-                  "then %s)\n",
-                  good ? "PASS" : "FAIL", to_string(ofa.stats.reuse), to_string(ofb.stats.reuse));
+      const bool good = failed && ofb.stats.reuse == Reuse::Parked &&
+                        ofb.stats.reused_tokens == int(b.size()) && ofb.tokens == rfb.tokens;
+      std::printf("%s a failed allocation keeps the parked conversations and the request errors out (%s, then %s)\n",
+                  good ? "PASS" : "FAIL", failed ? "failed" : "completed", to_string(ofb.stats.reuse));
       ok &= good;
     }
   }

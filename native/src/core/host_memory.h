@@ -9,6 +9,11 @@ namespace ingine {
 
 inline constexpr std::size_t kHugePageBytes = 2ull << 20;
 
+// Two MiB alignment of a region (the same alignment HostRegion applies internally).
+inline std::size_t align_huge(std::size_t bytes) {
+    return (bytes + kHugePageBytes - 1) / kHugePageBytes * kHugePageBytes;
+}
+
 // One 2 MiB-aligned anonymous mapping advised MADV_HUGEPAGE. Callers fill it and then register
 // it with CUDA so the GPU can read it
 // over PCIe and cudaMemcpyAsync can DMA from it. Registration failure is not fatal: the

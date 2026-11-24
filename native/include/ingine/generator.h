@@ -91,9 +91,9 @@ struct RuntimeOptions {
   int prefill_chunk = 3072;
   bool dense_fp8 = true, kv_fp8 = false, spec = false;
   float spec_threshold = 0.8f;
-  // Conversation parking: device memory (MiB) for the checkpoints of conversations displaced by another
-  // one, least recently used evicted, all released when a device allocation fails; 0 disables; negative:
-  // min(3072, free memory after start-up - 4096), at least 0.
+  // Conversation parking: host memory (MiB) for the checkpoints of conversations displaced by another
+  // one, least recently used evicted; a device allocation failure never releases host-parked copies. 0
+  // disables; negative: min(32768, free host memory after start-up - 4096), at least 0.
   int park_mb = -1;
   // Image input: load the vision tower (636 MB of the checkpoint, resident) and accept prompts with images.
   bool vision = false;

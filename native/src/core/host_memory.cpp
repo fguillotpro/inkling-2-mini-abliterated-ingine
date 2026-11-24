@@ -15,13 +15,6 @@
 #include <sys/mman.h>
 
 namespace ingine {
-namespace {
-
-std::size_t align_huge(std::size_t bytes) {
-    return (bytes + kHugePageBytes - 1) / kHugePageBytes * kHugePageBytes;
-}
-
-} // namespace
 
 HostRegion::HostRegion(std::size_t bytes) {
     if (bytes == 0) { throw std::invalid_argument("HostRegion size must be nonzero"); }

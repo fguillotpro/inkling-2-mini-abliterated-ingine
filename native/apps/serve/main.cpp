@@ -91,8 +91,8 @@ int main(int argc, char** argv) {
   ap.option("--spec-threshold", "", "verify the leading drafts whose draft probability exceeds this (0 = always all 7)",
             &spec_threshold);
   ap.option("--park-mb", "",
-            "device memory (MiB) for conversations displaced by another one, released when memory runs short, "
-            "0 = off (default: min(3072, free memory after start-up - 4096))",
+            "host memory (MiB) for conversations displaced by another one, 0 = off (default: min(32768, "
+            "free host memory after start-up - 4096))",
             &park_mb);
   ap.flag("--no-vision", "text only: do not load the vision tower (saves 0.6 GB) and reject requests with images",
           &no_vision);
