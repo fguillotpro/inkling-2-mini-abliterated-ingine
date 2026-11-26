@@ -58,6 +58,7 @@ class ChatServer {
   Json model_card() const;
 
   const text::ChatFormat& fmt_;
+  model::Generator& generator_;
   const std::string model_id_;
   const int max_model_len_;
   const model::Sampling sampling_defaults_;

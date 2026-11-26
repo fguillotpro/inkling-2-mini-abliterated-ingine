@@ -118,6 +118,8 @@ class Generator {
     return generate(prompt.ids, max_new_tokens, sampling, stop_ids, on_tokens);
   }
   virtual std::uint64_t park_budget_bytes() const { return 0; }  // host-memory budget (bytes) for parked conversations; 0: off
+  virtual int parked_count() const { return 0; }                  // conversations currently parked in host DRAM
+  virtual std::uint64_t parked_bytes() const { return 0; }         // host-memory bytes used by parked copies
   virtual bool supports_images() const { return false; }
 };
 

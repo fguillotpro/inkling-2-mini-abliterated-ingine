@@ -141,6 +141,7 @@ struct StreamState {
 
 ChatServer::ChatServer(model::Generator& generator, const text::ChatFormat& fmt, ServerOptions options)
     : fmt_(fmt),
+      generator_(generator),
       model_id_(options.model_id.empty() ? generator.model_id() : options.model_id),
       max_model_len_(options.max_model_len ? options.max_model_len : generator.max_model_len()),
       sampling_defaults_(options.sampling),
@@ -182,12 +183,18 @@ void ChatServer::handle_get(const httplib::Request& req, httplib::Response& res)
   const std::string path = route_path(req);
   if (path == "/health") {
     const engine::SchedulerStats st = scheduler_.stats();
+    const int parked_count = generator_.parked_count();
+    const std::uint64_t parked_bytes = generator_.parked_bytes();
+    const std::uint64_t park_budget = generator_.park_budget_bytes();
     send_json(res, 200,
               Json{{"status", "ok"},
                    {"model", model_id_},
                    {"waiting", st.waiting},
                    {"running", st.running},
-                   {"max_queue", st.max_queue}});
+                   {"max_queue", st.max_queue},
+                   {"parked", {{"count", parked_count},
+                                  {"bytes_mib", parked_bytes >> 20},
+                                  {"budget_mib", park_budget >> 20}}}});
   } else if (path == "/logs") {
     const std::string lines_param = req.get_param_value("lines");
     std::size_t lines = 200;

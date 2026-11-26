@@ -324,6 +324,8 @@ void test_models_and_health() {
   Json h = health(s->port());
   CHECK(h["status"] == "ok" && h["model"] == "inkling-test" && h["waiting"] == 0 && h["running"] == false &&
         h["max_queue"] == 4);
+  CHECK(h["parked"]["count"].get<int>() == 0 && h["parked"]["bytes_mib"].get<int>() == 0 &&
+        h["parked"]["budget_mib"].get<int>() == 0);
   CHECK(request(s->port(), "GET", "/health/").status == 200);
   Response nope = request(s->port(), "GET", "/nope");
   CHECK(nope.status == 404 && Json::parse(nope.body)["error"]["type"] == "not_found_error");

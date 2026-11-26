@@ -60,6 +60,16 @@ class EngineGenerator final : public Generator {
   int max_model_len() const override { return options_.max_ctx; }
 
   std::uint64_t park_budget_bytes() const override { return park_budget_; }
+  int parked_count() const override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return int(parked_.size());
+  }
+  std::uint64_t parked_bytes() const override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::uint64_t bytes = 0;
+    for (const Parked& p : parked_) bytes += p.data.size();
+    return bytes;
+  }
 
   bool supports_images() const override { return vision_ != nullptr; }
 
@@ -406,21 +416,41 @@ class EngineGenerator final : public Generator {
     // a queued copy may still target a parked region; wait for it before the release below
     cudaStreamSynchronize(rt_.stream());
     // a parked prefix of this conversation is superseded by it
+    std::size_t superseded = 0, superseded_tokens = 0, superseded_bytes = 0;
     std::erase_if(parked_, [&](const Parked& p) {
-      return !kept(p) && p.ids.size() < n && std::equal(p.ids.begin(), p.ids.end(), checkpoint_ids_.begin());
+      const bool drop =
+          !kept(p) && p.ids.size() < n && std::equal(p.ids.begin(), p.ids.end(), checkpoint_ids_.begin());
+      if (drop) {
+        ++superseded;
+        superseded_tokens += p.ids.size();
+        superseded_bytes += p.data.size();
+      }
+      return drop;
     });
+    if (superseded)
+      ingine::engine::server_log().info("parking: superseded {} parked conversation(s) ({} tokens, {} MiB)",
+                                        superseded, superseded_tokens, superseded_bytes >> 20);
     const ParkLayout l = park_layout(int(n));
     const std::size_t want = align_huge(l.bytes);
     // the copy must fit in the currently free host memory (parking is best-effort)
     const std::uint64_t avail = mem_available_bytes();
-    if (avail != 0 && avail < want) return;
+    if (avail != 0 && avail < want) {
+      ingine::engine::server_log().warn("parking: skipped {} tokens ({} MiB requested, {} MiB available)",
+                                        n, want >> 20, avail >> 20);
+      return;
+    }
     std::size_t used = 0, kept_bytes = 0;
     for (const Parked& p : parked_) used += p.data.size(), kept_bytes += kept(p) ? p.data.size() : 0;
-    if (kept_bytes + want > park_budget_) return;
+    if (kept_bytes + want > park_budget_) {
+      ingine::engine::server_log().warn("parking: skipped {} tokens ({} MiB requested, budget {} MiB exceeded)",
+                                        n, want >> 20, park_budget_ >> 20);
+      return;
+    }
     while (used + want > park_budget_) {  // least recently used first
       auto lru = parked_.end();
       for (auto it = parked_.begin(); it != parked_.end(); ++it)
         if (!kept(*it) && (lru == parked_.end() || it->used < lru->used)) lru = it;
+      ingine::engine::server_log().info("parking: evicted {} tokens ({} MiB)", lru->ids.size(), lru->data.size() >> 20);
       used -= lru->data.size();
       parked_.erase(lru);
     }
@@ -448,6 +478,10 @@ class EngineGenerator final : public Generator {
     if (drafter_) p.context = drafter_->checkpoint_context();
     p.used = ++clock_;
     parked_.push_back(std::move(p));
+    std::uint64_t parked_total = 0;
+    for (const Parked& q : parked_) parked_total += q.data.size();
+    ingine::engine::server_log().info("parking: parked {} tokens ({} MiB); {} parked, {} MiB of {} MiB budget",
+                                      n, want >> 20, int(parked_.size()), parked_total >> 20, park_budget_ >> 20);
   }
 
   // Puts a parked conversation back as the prompt checkpoint (restore_checkpoint() then restores it) and its
