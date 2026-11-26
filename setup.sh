@@ -177,10 +177,10 @@ install_command() {
   printf 'Use: ingine start | stop | status | logs | serve | update (ingine help for details)\n'
 }
 
-# Fast-forwards this clone to the published installer, whose manifest pins the current model.
-# Local edits that the update does not touch are kept.
+# Fast-forwards this clone to the upstream of the branch it is on (a fork branch such as
+# dram-parking), whose manifest pins the current model. Local edits that the update does not touch are kept.
 update_installer() {
-  local top before after
+  local branch top before after
   if ! command -v git >/dev/null; then
     echo "Missing git. Install it, then run the update again." >&2
     return 1
@@ -192,9 +192,19 @@ update_installer() {
     return 1
   fi
   before="$(git -C "$ROOT" rev-parse HEAD)" || return 1
-  printf '\nFetching the latest installer...\n'
-  git -C "$ROOT" fetch --quiet origin main || return 1
-  if ! git -C "$ROOT" merge --quiet --ff-only FETCH_HEAD; then
+  branch="$(git -C "$ROOT" branch --show-current 2>/dev/null)" || branch=""
+  if [[ -z "$branch" ]]; then
+    echo "Not on a branch (detached HEAD), so the update cannot tell which branch to fetch." >&2
+    echo "Check out a branch (for example dram-parking), then run the update again." >&2
+    return 1
+  fi
+  printf '\nFetching the latest installer (%s)...\n' "$branch"
+  if ! git -C "$ROOT" fetch --quiet origin "$branch"; then
+    echo "Could not fetch $branch from origin; nothing was changed." >&2
+    echo "Push the branch to origin first, or fix the error above, then run the update again." >&2
+    return 1
+  fi
+  if ! git -C "$ROOT" merge --quiet --ff-only "origin/$branch"; then
     echo "Local commits or edits in this folder conflict with the update; nothing was changed." >&2
     echo "Review them with git status, save or undo them, then run the update again." >&2
     return 1
