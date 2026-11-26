@@ -75,9 +75,8 @@ std::shared_ptr<RingSink> make_ring_sink() { return std::make_shared<RingSink>()
 
 std::shared_ptr<spdlog::logger> make_logger() {
   const auto ring = make_ring_sink();
-  auto logger = std::make_shared<spdlog::logger>(
-      "ingine.server",
-      {std::make_shared<spdlog::sinks::stderr_sink_mt>(), ring});
+  auto logger = std::make_shared<spdlog::logger>("ingine.server", std::make_shared<spdlog::sinks::stderr_sink_mt>());
+  logger->sinks().push_back(ring);
   auto formatter = std::make_unique<spdlog::pattern_formatter>();
   formatter->add_flag<LevelName>('*').set_pattern("%Y-%m-%d %H:%M:%S,%e %* %n: %v");
   logger->set_formatter(std::move(formatter));

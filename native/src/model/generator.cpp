@@ -431,7 +431,7 @@ class EngineGenerator final : public Generator {
       p.data.register_with_cuda();  // registration failure is non-fatal: pageable fallback, slower copies
     } catch (const std::exception& e) {
       // skip this park only; a transient failure must not disable parking for the rest of the process
-      ingine::engine::server_log().warning("conversation parking skipped: {}", e.what());
+      ingine::engine::server_log().warn("conversation parking skipped: {}", e.what());
       cudaGetLastError();  // the failed allocation is not a sticky error
       return;
     }
