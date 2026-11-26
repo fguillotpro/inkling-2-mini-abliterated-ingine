@@ -150,6 +150,8 @@ int main(int argc, char** argv) {
       options.park_mb = park_mb;
       options.vision = !no_vision;
       generator = ingine::model::make_generator(options);
+      log.info("conversation parking: host budget {} MiB ({})", generator->park_budget_bytes() >> 20,
+               options.park_mb < 0 ? "auto" : "--park-mb");
 #else
       log.critical("--engine: this ingine-serve was built without ingine_model (src/model)");
       return 1;

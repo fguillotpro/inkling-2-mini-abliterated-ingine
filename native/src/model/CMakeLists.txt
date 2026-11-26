@@ -23,6 +23,8 @@ target_link_libraries(ingine_model PUBLIC
   ingine_kernels_head
   nlohmann_json::nlohmann_json
   CUDA::cudart)
+# the logger (server_log) the model emits parking/skip lines through
+target_link_libraries(ingine_model PRIVATE ingine_engine)
 foreach(area prefill draft)
   if(TARGET ingine_kernels_${area})
     target_link_libraries(ingine_model PUBLIC ingine_kernels_${area})

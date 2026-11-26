@@ -187,6 +187,18 @@ void ChatServer::handle_get(const httplib::Request& req, httplib::Response& res)
                    {"waiting", st.waiting},
                    {"running", st.running},
                    {"max_queue", st.max_queue}});
+  } else if (path == "/logs") {
+    const std::string lines_param = req.get_param_value("lines");
+    std::size_t lines = 200;
+    if (!lines_param.empty()) {
+      try {
+        lines = std::stoull(lines_param);
+      } catch (const std::invalid_argument&) {
+        lines = 200;
+      }
+    }
+    const auto recent = engine::recent_log_lines(lines);
+    send_json(res, 200, Json{{"lines", recent}, {"count", recent.size()}});
   } else if (path == "/v1/models") {
     send_json(res, 200, Json{{"object", "list"}, {"data", Json::array({model_card()})}});
   } else if (path == "/v1/models/" + model_id_) {

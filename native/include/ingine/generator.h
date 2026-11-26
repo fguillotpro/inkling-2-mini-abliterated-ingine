@@ -117,6 +117,7 @@ class Generator {
     if (!prompt.images.empty()) throw std::invalid_argument("this generator does not take images");
     return generate(prompt.ids, max_new_tokens, sampling, stop_ids, on_tokens);
   }
+  virtual std::uint64_t park_budget_bytes() const { return 0; }  // host-memory budget (bytes) for parked conversations; 0: off
   virtual bool supports_images() const { return false; }
 };
 

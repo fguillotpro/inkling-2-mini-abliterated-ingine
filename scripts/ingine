@@ -45,7 +45,7 @@ Profile: \$ROOT/runtime-manifest.json "serving" (FP8 dense weights, FP8 KV cache
 written by the installer to \$ROOT/native/build-install/profile.env next to the server binary.
 
 The API has no authentication; keep it on loopback.
-Endpoints: http://HOST:PORT/v1/chat/completions, /v1/models, /health.
+Endpoints: http://HOST:PORT/v1/chat/completions, /v1/models, /health, /logs.
 HELP
 }
 

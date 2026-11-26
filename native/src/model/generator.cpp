@@ -9,6 +9,7 @@
 #include "core/arena.h"
 #include "core/device.h"
 #include "core/host_memory.h"
+#include "engine/log.h"
 #include "kernels/head/head.h"
 #include "model/drafter.h"
 #include "model/prefill.h"
@@ -19,7 +20,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstdio>
 #include <deque>
 #include <mutex>
 #include <random>
@@ -59,6 +59,8 @@ class EngineGenerator final : public Generator {
 
   int max_model_len() const override { return options_.max_ctx; }
 
+  std::uint64_t park_budget_bytes() const override { return park_budget_; }
+
   bool supports_images() const override { return vision_ != nullptr; }
 
  private:
@@ -93,8 +95,6 @@ class EngineGenerator final : public Generator {
     } else {
       park_budget_ = std::size_t(options.park_mb) << 20;
     }
-    std::fprintf(stderr, "conversation parking: host budget %zu MiB (%s)\n", park_budget_ >> 20,
-                 options.park_mb < 0 ? "auto" : "--park-mb");
   }
 
  public:
@@ -431,7 +431,7 @@ class EngineGenerator final : public Generator {
       p.data.register_with_cuda();  // registration failure is non-fatal: pageable fallback, slower copies
     } catch (const std::exception& e) {
       // skip this park only; a transient failure must not disable parking for the rest of the process
-      std::fprintf(stderr, "conversation parking skipped: %s\n", e.what());
+      ingine::engine::server_log().warning("conversation parking skipped: {}", e.what());
       cudaGetLastError();  // the failed allocation is not a sticky error
       return;
     }

@@ -46,9 +46,10 @@ private:
 };
 
 // Device memory pressure: when the cudaMalloc of a DeviceBuffer fails, the registered release hooks free what
-// they can (the Generator drops its parked conversations; each returns whether it freed anything) and the
-// allocation is retried once. add_release_hook returns an id for remove_release_hook. fail_next_allocations(n)
-// makes the next n DeviceBuffer allocation attempts fail as out of memory (tests).
+// they can (each returns whether it freed anything) and the allocation is retried once. No component currently
+// registers one: parked conversations live in host DRAM, not VRAM, so device pressure never releases them and
+// a failed allocation just fails the request. add_release_hook returns an id for remove_release_hook;
+// fail_next_allocations(n) makes the next n DeviceBuffer allocation attempts fail as out of memory (tests).
 using ReleaseHook = std::function<bool()>;
 int add_release_hook(ReleaseHook hook);
 void remove_release_hook(int id);

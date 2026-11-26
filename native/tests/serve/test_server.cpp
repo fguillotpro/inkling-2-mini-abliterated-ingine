@@ -331,6 +331,35 @@ void test_models_and_health() {
   CHECK(request(s->port(), "POST", "/v1/completions", "{}").status == 404);
 }
 
+void test_logs() {
+  auto s = serve();
+  // no requests yet: an empty ring is a valid 200 answer
+  Response empty = request(s->port(), "GET", "/logs");
+  CHECK(empty.status == 200);
+  Json empty_body = Json::parse(empty.body);
+  CHECK(empty_body["lines"].is_array() && empty_body["count"].is_number_integer());
+  CHECK(empty_body["count"].get<int>() == empty_body["lines"].size());
+  // a request produces log lines that show up in the buffer
+  Chat r = chat(s->port(), {{"model", "whatever"}});
+  CHECK(r.status == 200);
+  Response full = request(s->port(), "GET", "/logs");
+  CHECK(full.status == 200);
+  Json body = Json::parse(full.body);
+  CHECK(body["count"].is_number_integer() && body["count"].get<int>() > 0);
+  CHECK(body["count"].get<int>() == body["lines"].size());
+  CHECK(body["lines"].back().get<std::string>().find("prompt=") != std::string::npos);
+  // the ?lines= cap limits the response
+  Response capped = request(s->port(), "GET", "/logs?lines=1");
+  CHECK(capped.status == 200);
+  Json capped_body = Json::parse(capped.body);
+  CHECK(capped_body["count"].get<int>() == 1 && capped_body["lines"].size() == 1);
+  // an unparsable ?lines= falls back to the default without erroring
+  Response bad = request(s->port(), "GET", "/logs?lines=notanumber");
+  CHECK(bad.status == 200);
+  CHECK(Json::parse(bad.body)["count"].get<int>() == Json::parse(bad.body)["lines"].size());
+}
+
+
 void test_non_streaming() {
   auto s = serve();
   Chat r = chat(s->port(), {{"model", "whatever"}});
@@ -831,6 +860,7 @@ int main() {
   g_fmt = &fmt;
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"models_and_health", test_models_and_health},
+      {"logs", test_logs},
       {"non_streaming", test_non_streaming},
       {"streaming_matches_non_streaming[False]", [] { test_streaming_matches_non_streaming(false); }},
       {"streaming_matches_non_streaming[True]", [] { test_streaming_matches_non_streaming(true); }},
