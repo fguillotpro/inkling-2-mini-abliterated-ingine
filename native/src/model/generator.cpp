@@ -557,7 +557,7 @@ class EngineGenerator final : public Generator {
   std::vector<Parked> parked_;
   std::size_t park_budget_ = 0;  // bytes
   std::uint64_t clock_ = 0;      // last use of a parked conversation
-  std::mutex mutex_;
+  mutable std::mutex mutex_;  // park_count/parked_bytes read from a const method
 };
 
 }  // namespace
