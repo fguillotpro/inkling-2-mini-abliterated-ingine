@@ -332,13 +332,15 @@ void test_models_and_health() {
 }
 
 void test_logs() {
+  // the ring is process-global; the count==0 assertion holds only while no test has completed a chat
+  // request yet (models_and_health is the one allowed before this test, since it issues no chat)
   auto s = serve();
-  // no requests yet: an empty ring is a valid 200 answer
+  // no requests yet: an empty ring is a valid 200 answer with nothing in it
   Response empty = request(s->port(), "GET", "/logs");
   CHECK(empty.status == 200);
   Json empty_body = Json::parse(empty.body);
   CHECK(empty_body["lines"].is_array() && empty_body["count"].is_number_integer());
-  CHECK(empty_body["count"].get<int>() == empty_body["lines"].size());
+  CHECK(empty_body["count"].get<int>() == 0 && empty_body["lines"].empty());
   // a request produces log lines that show up in the buffer
   Chat r = chat(s->port(), {{"model", "whatever"}});
   CHECK(r.status == 200);
@@ -353,10 +355,16 @@ void test_logs() {
   CHECK(capped.status == 200);
   Json capped_body = Json::parse(capped.body);
   CHECK(capped_body["count"].get<int>() == 1 && capped_body["lines"].size() == 1);
-  // an unparsable ?lines= falls back to the default without erroring
+  // an unparsable ?lines= falls back to the default (everything logged) without erroring
   Response bad = request(s->port(), "GET", "/logs?lines=notanumber");
   CHECK(bad.status == 200);
-  CHECK(Json::parse(bad.body)["count"].get<int>() == Json::parse(bad.body)["lines"].size());
+  Json bad_body = Json::parse(bad.body);
+  CHECK(bad_body["count"].get<int>() == body["count"].get<int>());
+  // a ?lines= value beyond uint64 falls back to the default rather than erroring out
+  Response huge = request(s->port(), "GET", "/logs?lines=99999999999999999999999999");
+  CHECK(huge.status == 200);
+  Json huge_body = Json::parse(huge.body);
+  CHECK(huge_body["count"].get<int>() == body["count"].get<int>());
 }
 
 

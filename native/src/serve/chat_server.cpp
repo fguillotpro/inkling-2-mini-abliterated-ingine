@@ -11,6 +11,7 @@
 #include <ctime>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -194,6 +195,8 @@ void ChatServer::handle_get(const httplib::Request& req, httplib::Response& res)
       try {
         lines = std::stoull(lines_param);
       } catch (const std::invalid_argument&) {
+        lines = 200;
+      } catch (const std::out_of_range&) {
         lines = 200;
       }
     }

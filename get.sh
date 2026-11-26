@@ -7,12 +7,43 @@
 # Everything happens inside main, which runs only once this whole file has been downloaded.
 set -euo pipefail
 
+# Normalizes a github URL of any common form to the "owner/repo" pair — https:// (with or without .git,
+# with or without a trailing slash), git@host:owner/repo (with or without a :port), ssh:// (with or without
+# a :port), a bare owner/repo, and non-github hosts with any of those shapes. The install check compares on
+# this key, not on raw URL text, so a clone made through either form overlaps a re-run made through another.
+repo_path_of() {
+  local repo="$1"
+  repo="${repo%/}"
+  repo="${repo%.git}"
+  repo="${repo#*://}"
+  repo="${repo#*@}"
+  if [[ "$repo" =~ ^github\.com:[0-9]+/(.*)$ ]]; then
+    repo="${BASH_REMATCH[1]}"
+  elif [[ "$repo" =~ ^github\.com:(.*)$ ]]; then
+    repo="${BASH_REMATCH[1]}"
+  elif [[ "$repo" =~ ^github\.com/(.*)$ ]]; then
+    repo="${BASH_REMATCH[1]}"
+  elif [[ "$repo" == *:* ]]; then
+    # scp-style host:owner/repo or host:port/owner/repo — drop the host, then a port segment
+    repo="${repo#*:}"
+    if [[ "$repo" =~ ^[0-9]+/(.*)$ ]]; then
+      repo="${BASH_REMATCH[1]}"
+    fi
+  elif [[ "$repo" == */* && "$repo" != */*/* ]]; then
+    :  # a bare owner/repo — leave unchanged
+  else
+    # host/owner/repo — drop the host segment
+    repo="${repo#*/}"
+  fi
+  printf '%s' "$repo"
+}
+
 main() {
   local repo="${INGINE_REPO:-https://github.com/fguillotpro/inkling-2-mini-abliterated-ingine.git}"
   local branch="${INGINE_BRANCH:-dram-parking}"
   local dir="${INGINE_DIR:-$HOME/inkling-2-mini-abliterated-ingine}"
-  local repo_path="${repo#*github.com/}"
-  repo_path="${repo_path%.git}"
+  local repo_path
+  repo_path="$(repo_path_of "$repo")"
 
   if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
     echo "This installer needs Linux x86_64 with an NVIDIA RTX 5090." >&2
@@ -24,7 +55,7 @@ main() {
   fi
 
   if [[ -e "$dir" ]]; then
-    if [[ "$(git -C "$dir" remote get-url origin 2>/dev/null)" != *"$repo_path"* ]]; then
+    if [[ "$(repo_path_of "$(git -C "$dir" remote get-url origin 2>/dev/null)")" != "$repo_path" ]]; then
       echo "$dir exists and is not this installer. Choose another folder: curl ... | INGINE_DIR=/path/to/folder bash" >&2
       exit 1
     fi
@@ -43,4 +74,8 @@ main() {
   exec bash setup.sh </dev/tty
 }
 
-main "$@"
+# Run the installer when this file is executed (or piped in), not when it is sourced for its functions.
+# When piped, ${BASH_SOURCE[0]} is unset (guarded); when executed, it equals $0.
+if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
