@@ -64,7 +64,7 @@ constexpr l2::Evict WEIGHT_L2 = l2::Evict::first;
 
 template <int M>
 struct ProjEpi {
-  static constexpr int kInputs = 3;
+  [[maybe_unused]] static constexpr int kInputs = 3;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = true;
   const __nv_bfloat16* xin;  // [3, M, H]
   const int* segments;       // [S, 3]
@@ -83,7 +83,7 @@ struct ProjEpi {
 
 template <int M>
 struct HeadEpi {
-  static constexpr int kInputs = 1;
+  [[maybe_unused]] static constexpr int kInputs = 1;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = true;
   const __nv_bfloat16* x;
   int V;
@@ -98,7 +98,7 @@ struct HeadEpi {
 // plain GEMV (drafter): one input x [M, K] (row stride K), out [M, R] = bf16(w . x)
 template <int M>
 struct GemvEpi {
-  static constexpr int kInputs = 1;
+  [[maybe_unused]] static constexpr int kInputs = 1;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = true;
   const __nv_bfloat16* x;
   int R;
@@ -110,7 +110,7 @@ struct GemvEpi {
 
 template <int M>
 struct ConvEpi {
-  static constexpr int kInputs = 1;
+  [[maybe_unused]] static constexpr int kInputs = 1;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = false;  // the conv of token m needs y of tokens m-3 .. m
   const __nv_bfloat16* x;  // [M, 3072]
   const float* conv_w;     // [H, 4], tap 3 = current token
