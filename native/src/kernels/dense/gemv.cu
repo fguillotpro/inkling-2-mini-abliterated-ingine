@@ -64,7 +64,6 @@ constexpr l2::Evict WEIGHT_L2 = l2::Evict::first;
 
 template <int M>
 struct ProjEpi {
-  [[maybe_unused]] static constexpr int kInputs = 3;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = true;
   const __nv_bfloat16* xin;  // [3, M, H]
   const int* segments;       // [S, 3]
@@ -83,7 +82,6 @@ struct ProjEpi {
 
 template <int M>
 struct HeadEpi {
-  [[maybe_unused]] static constexpr int kInputs = 1;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = true;
   const __nv_bfloat16* x;
   int V;
@@ -98,7 +96,6 @@ struct HeadEpi {
 // plain GEMV (drafter): one input x [M, K] (row stride K), out [M, R] = bf16(w . x)
 template <int M>
 struct GemvEpi {
-  [[maybe_unused]] static constexpr int kInputs = 1;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = true;
   const __nv_bfloat16* x;
   int R;
@@ -110,7 +107,6 @@ struct GemvEpi {
 
 template <int M>
 struct ConvEpi {
-  [[maybe_unused]] static constexpr int kInputs = 1;  // only read by the M >= 2 kernel (never at M = 1)
   static constexpr bool kScatter = false;  // the conv of token m needs y of tokens m-3 .. m
   const __nv_bfloat16* x;  // [M, 3072]
   const float* conv_w;     // [H, 4], tap 3 = current token
@@ -230,7 +226,7 @@ __device__ __forceinline__ uint32_t e4m3x2_to_bf16x2(uint32_t u) {
 // (xor of all the batch's loads) & zero, so ptxas cannot interleave the mma with the batch's loads and
 // all U steps' loads of a warp are in flight together (otherwise it issues one step's loads at a time,
 // ~1 KB per warp, and scattered 64-byte requests from 16 rows run at ~40% of DRAM bandwidth).
-template <bool FP8, int K, int M, int SPLITK, int U, class Epi>
+template <bool FP8, int K, int M, int SPLITK, int U, class Epi, int KInputs>
 __global__ void __launch_bounds__(32 * SPLITK) gemv_mma_kernel(const uint8_t* __restrict__ w,
                                                               const float* __restrict__ w_scale, int rows,
                                                               uint32_t zero, Epi epi) {
@@ -302,12 +298,12 @@ __global__ void __launch_bounds__(32 * SPLITK) gemv_mma_kernel(const uint8_t* __
       }
     }
   };
-  if constexpr (Epi::kInputs == 1) {
+  if constexpr (KInputs == 1) {
     pass(0);
   } else {
     // inputs present among the block's 16 rows (warp-uniform; every warp sees the same rows)
 #pragma unroll 1
-    for (int i = 0; i < Epi::kInputs; ++i)
+    for (int i = 0; i < KInputs; ++i)
       if (__any_sync(0xffffffffu, ia == i || ib == i)) pass(i);
   }
 
@@ -346,7 +342,7 @@ __global__ void __launch_bounds__(32 * SPLITK) gemv_mma_kernel(const uint8_t* __
 // BLOCK: threads per block of the M = 1 kernel (0: M = 1 runs the tensor-core kernel too, for K whose
 // whole row per lane would not fit in registers); SPLITK: warps per 16-row block of the M >= 2 kernel;
 // UFP8: steps per load batch of its FP8 instantiation.
-template <int K, int BLOCK, int SPLITK, int UFP8, template <int> class Epi, class Make>
+template <int K, int BLOCK, int SPLITK, int UFP8, template <int> class Epi, int KInputs, class Make>
 void launch_gemv(const Matrix& w, int M, bool pdl, cudaStream_t stream, Make make) {
   const bool fp8 = w.scale != nullptr;
   require(w.w != nullptr && w.rows > 0, "weight matrix is empty");
@@ -363,8 +359,8 @@ void launch_gemv(const Matrix& w, int M, bool pdl, cudaStream_t stream, Make mak
       else launch_ex(gemv_kernel<false, K, 32, B, E>, dim3((rows * 32 + B - 1) / B), B, 0, 1, pdl, stream, wp, sc, rows, 0u, epi);
     } else {
       const dim3 blocks((rows + 15) / 16);
-      if (fp8) launch_ex(gemv_mma_kernel<true, K, MM, SPLITK, UFP8, E>, blocks, 32 * SPLITK, 0, 1, pdl, stream, wp, sc, rows, 0u, epi);
-      else launch_ex(gemv_mma_kernel<false, K, MM, SPLITK, MMA_U_BF16, E>, blocks, 32 * SPLITK, 0, 1, pdl, stream, wp, sc, rows, 0u, epi);
+      if (fp8) launch_ex(gemv_mma_kernel<true, K, MM, SPLITK, UFP8, E, KInputs>, blocks, 32 * SPLITK, 0, 1, pdl, stream, wp, sc, rows, 0u, epi);
+      else launch_ex(gemv_mma_kernel<false, K, MM, SPLITK, MMA_U_BF16, E, KInputs>, blocks, 32 * SPLITK, 0, 1, pdl, stream, wp, sc, rows, 0u, epi);
     }
   };
   switch (M) {
@@ -441,7 +437,7 @@ void proj(const __nv_bfloat16* xin, int M, Matrix w, const int* segments, int ns
           cudaStream_t stream) {
   require(xin && segments && out && nseg > 0, "proj: null argument");
   const int R = w.rows;
-  launch_gemv<H, 256, PROJ_SPLITK, MMA_U_FP8, ProjEpi>(w, M, pdl, stream, [&](auto mc) {
+  launch_gemv<H, 256, PROJ_SPLITK, MMA_U_FP8, ProjEpi, 3>(w, M, pdl, stream, [&](auto mc) {
     constexpr int MM = decltype(mc)::value;
     return ProjEpi<MM>{xin, segments, nseg, R, out};
   });
@@ -453,7 +449,7 @@ void proj_conv(const __nv_bfloat16* x, int M, Matrix w, const float* conv_w, flo
   require(w.rows == H, "proj_conv: w must have 2304 rows");
   // M = 1: 2304 rows = 1152-2304 warps; 32-thread blocks spread them evenly over the SMs (measured: equal
   // or better than 64-256)
-  launch_gemv<3072, 32, CONV_SPLITK, CONV_U_FP8, ConvEpi>(w, M, pdl, stream, [&](auto mc) {
+  launch_gemv<3072, 32, CONV_SPLITK, CONV_U_FP8, ConvEpi, 1>(w, M, pdl, stream, [&](auto mc) {
     constexpr int MM = decltype(mc)::value;
     return ConvEpi<MM>{x, conv_w, conv_state, out, conv_hist};
   });
@@ -462,7 +458,7 @@ void proj_conv(const __nv_bfloat16* x, int M, Matrix w, const float* conv_w, flo
 void head(const __nv_bfloat16* x, int M, Matrix w, float* out, bool pdl, cudaStream_t stream) {
   require(x && out, "head: null argument");
   const int V = w.rows;
-  launch_gemv<H, 256, HEAD_SPLITK, MMA_U_FP8, HeadEpi>(w, M, pdl, stream, [&](auto mc) {
+  launch_gemv<H, 256, HEAD_SPLITK, MMA_U_FP8, HeadEpi, 1>(w, M, pdl, stream, [&](auto mc) {
     constexpr int MM = decltype(mc)::value;
     return HeadEpi<MM>{x, V, out};
   });
@@ -478,8 +474,8 @@ void gemv(const __nv_bfloat16* x, int M, int K, Matrix w, float* out, bool pdl, 
   // 2304 rows = 144 blocks of 16 rows: 16 warps per block (K slices of 192 / 576 columns) keep enough
   // bytes in flight (measured M = 8, BF16: K = 3072 10.4 -> 8.4 us, K = 9216 28.3 -> 26.0 us vs 8 warps).
   // K = 3072, M = 1: as proj_conv; K = 9216: 36 chunks per lane would spill, so M = 1 uses tensor cores.
-  if (K == 3072) launch_gemv<3072, 32, 16, MMA_U_FP8, GemvEpi>(w, M, pdl, stream, make);
-  else if (K == 9216) launch_gemv<9216, 0, 16, MMA_U_FP8, GemvEpi>(w, M, pdl, stream, make);
+  if (K == 3072) launch_gemv<3072, 32, 16, MMA_U_FP8, GemvEpi, 1>(w, M, pdl, stream, make);
+  else if (K == 9216) launch_gemv<9216, 0, 16, MMA_U_FP8, GemvEpi, 1>(w, M, pdl, stream, make);
   else require(false, "gemv: K must be 3072 or 9216");
 }
 
